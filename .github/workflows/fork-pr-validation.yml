@@ -1,0 +1,126 @@
+name: Fork PR Validation
+
+on:
+  push:
+    branches: [test/episode-date-order]
+    paths: [.github/workflows/fork-pr-validation.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go
+        with:
+          cache-name: fork-pr-go
+      - name: Build
+        run: go build ./...
+      - name: Format
+        if: always()
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        if: always()
+        run: go vet ./...
+      - name: Install lint tool
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+      - name: Lint changed lines
+        if: always()
+        run: make lint-changed BASE_REF=eff6665fc5cd30bf17b7ab834c322d66afb85b58
+      - name: Go tests
+        if: always()
+        run: make test-go
+      - name: Contract and repository checks
+        if: always()
+        env:
+          BASE_REF: eff6665fc5cd30bf17b7ab834c322d66afb85b58
+        run: |
+          failed=0
+          for target in verify-settings-bindings verify-playback-fixtures verify-route-inventory verify-migration-ledger verify-scenario-catalogs verify-offline-routes verify-apiv2-openapi verify-apiv2-contract verify-apiv2-fixtures verify-local-paths; do
+            make "$target" || failed=1
+          done
+          go test -count=1 -run '^TestCommittedArtifactMatchesRouter$' ./internal/apiv2/ || failed=1
+          exit "$failed"
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: pnpm/action-setup@v4
+        with:
+          package_json_file: web/package.json
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: go.mod
+      - name: Install
+        working-directory: web
+        run: pnpm install --frozen-lockfile
+      - name: Lint
+        working-directory: web
+        run: pnpm run lint
+      - name: Format
+        if: always()
+        working-directory: web
+        run: pnpm run format:check
+      - name: Build
+        if: always()
+        working-directory: web
+        run: pnpm run build
+      - name: Bundle budget
+        if: always()
+        working-directory: web
+        run: pnpm run budget:check
+      - name: Tests
+        if: always()
+        run: make test-web
+      - name: Generated web contracts
+        if: always()
+        run: make verify-settings-bindings-web verify-apiv2-web-types
+
+  database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    services:
+      postgres:
+        image: pgvector/pgvector:pg18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: silo_test
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d silo_test"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      SILO_TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/silo_test?sslmode=disable
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-go
+        with:
+          cache-name: fork-pr-db
+      - name: Migrate
+        run: DATABASE_URL="$SILO_TEST_DATABASE_URL" SECRET_KEY="$(openssl rand -base64 48)" go run ./cmd/silo/ --migrate-only
+      - name: Query budget pins
+        run: make test-db-pins
+      - name: Cursor regression
+        if: always()
+        run: go test -race -count=1 -v ./internal/catalog -run '^TestQueryCursorPostgresEpisodeParity$'

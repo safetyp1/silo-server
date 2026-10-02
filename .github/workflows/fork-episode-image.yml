@@ -3,6 +3,7 @@ name: Fork Episode Order Image
 on:
   push:
     branches: [test/episode-date-order]
+    paths-ignore: [.github/workflows/fork-pr-validation.yml]
   workflow_dispatch:
 
 permissions:
