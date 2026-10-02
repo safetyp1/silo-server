@@ -85,7 +85,8 @@ jobs:
         with:
           context: .
           platforms: ${{ matrix.platform }}
-          outputs: type=image,name=ghcr.io/safetyp1/silo-server,push-by-digest=true,name-canonical=true,push=true
+          outputs: type=image,name=ghcr.io/safetyp1/silo-server-episode-order,push-by-digest=true,name-canonical=true,push=true
+          labels: org.opencontainers.image.source=https://github.com/safetyp1/silo-server
           build-args: |
             BUILD_REVISION=${{ github.sha }}
             BUILD_DATE=${{ env.BUILD_DATE }}
@@ -126,10 +127,10 @@ jobs:
         run: |
           images=()
           for digest in *; do
-            images+=("ghcr.io/safetyp1/silo-server@sha256:$digest")
+            images+=("ghcr.io/safetyp1/silo-server-episode-order@sha256:$digest")
           done
           docker buildx imagetools create \
-            -t ghcr.io/safetyp1/silo-server:episode-date-order \
-            -t "ghcr.io/safetyp1/silo-server:episode-date-order-$GITHUB_SHA" \
+            -t ghcr.io/safetyp1/silo-server-episode-order:episode-date-order \
+            -t "ghcr.io/safetyp1/silo-server-episode-order:episode-date-order-$GITHUB_SHA" \
             "${images[@]}"
-          docker buildx imagetools inspect "ghcr.io/safetyp1/silo-server:episode-date-order-$GITHUB_SHA"
+          docker buildx imagetools inspect "ghcr.io/safetyp1/silo-server-episode-order:episode-date-order-$GITHUB_SHA"
