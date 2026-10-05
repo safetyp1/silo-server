@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 concurrency:
   group: fork-sync-episode-branch
@@ -23,6 +24,7 @@ jobs:
           ref: test/episode-date-order
           fetch-depth: 0
       - name: Merge upstream main
+        id: merge
         shell: bash
         run: |
           set -euo pipefail
@@ -40,4 +42,10 @@ jobs:
             exit 1
           fi
           git push origin HEAD:refs/heads/test/episode-date-order
+          echo 'changed=true' >> "$GITHUB_OUTPUT"
           echo 'Merged upstream main into test/episode-date-order without rewriting history.' >> "$GITHUB_STEP_SUMMARY"
+      - name: Build synced image
+        if: steps.merge.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run fork-episode-image.yml --repo safetyp1/silo-server --ref test/episode-date-order
