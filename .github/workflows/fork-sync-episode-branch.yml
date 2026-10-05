@@ -1,0 +1,43 @@
+name: Sync fork episode branch
+
+on:
+  schedule:
+    - cron: '17 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fork-sync-episode-branch
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.repository == 'safetyp1/silo-server'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: test/episode-date-order
+          fetch-depth: 0
+      - name: Merge upstream main
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git remote add upstream https://github.com/Silo-Server/silo-server.git
+          git fetch --no-tags upstream main
+          if git merge-base --is-ancestor upstream/main HEAD; then
+            echo 'Already up to date with upstream main.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if ! git merge --no-edit upstream/main; then
+            git merge --abort
+            echo '::error::Upstream merge failed. Resolve conflicts manually; the remote test branch was not changed.'
+            exit 1
+          fi
+          git push origin HEAD:refs/heads/test/episode-date-order
+          echo 'Merged upstream main into test/episode-date-order without rewriting history.' >> "$GITHUB_STEP_SUMMARY"
